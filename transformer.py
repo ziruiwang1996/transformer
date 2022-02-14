@@ -61,7 +61,7 @@ class encoder_block(nn.Module):
                 self.dropout = nn.Dropout(dropout)
 
         def forward(self, value, key, query, mask):
-                sublayer_1 = self.attention(value, key, query, mask)
+                sublayer_1 = self.attention(value, key, query, mask) #shape: (n, q_len, d_model)
                 sublayer_2 = self.dropout(self.norm1((query+sublayer_1).float()))
                 sublayer_3 = self.fc_feed_forward(sublayer_2)
                 out = self.dropout(self.norm2(sublayer_2+sublayer_3))
@@ -82,7 +82,7 @@ class encoder(nn.Module):
                 self.dropout = nn.Dropout(dropout)
 
         def forward(self, input, segment_pos, mask):
-                emb = embedding(input, self.d_model, segment_pos).to(self.device)
+                emb = embedding(input, self.d_model, segment_pos).to(self.device) #shape: sample, seq_len, d_model
                 out = self.dropout(emb)
                 for layer in self.layers:
                         out = layer(out, out, out, mask)  # out from previous block feed to the next block for num_layer times
@@ -97,31 +97,31 @@ class decoder_block(nn.Module):
                 self.cross_attention_block = encoder_block(d_model, heads, dropout, ff_expansion) # same architecture as encoder block
                 self.dropout = nn.Dropout(dropout)
 
-        def forward(self, input, value, key, src_mask, trg_mask):
+        def forward(self, value, key, input, src_mask, trg_mask):
                 # trg_mask: decoder self-attention, mask future tokens
                 # src_mask: encoder self-attention & decoder cross-attention, mask paddings
                 attention = self.attention(input, input, input, trg_mask)
-                query = self.dropout(self.norm((attention+input).float())) # Q from target sequence (outputs)
-                out = self.cross_attention_block(value, key, query, src_mask) # V, K from encoder
+                dec_query = self.dropout(self.norm((attention+input).float())) # Q from target sequence (outputs)
+                out = self.cross_attention_block(value, key, dec_query, src_mask) # V, K from encoder
                 return out
 
 
 class decoder(nn.Module):
-        def __init__(self, d_model, num_layer, heads, device, ff_expansion, dropout, trg_seq_len):
+        def __init__(self, d_model, num_layer, heads, device, ff_expansion, dropout, trg_vocab_size):
                 super(decoder, self).__init__()
                 self.d_model = d_model
                 self.device = device
                 self.layers = nn.ModuleList([decoder_block(d_model, heads, dropout, ff_expansion)
                                              for _ in range(num_layer)
                                              ]) # running block for num_layer times
-                self.fc_feed_forward = nn.Linear(d_model, trg_seq_len) # Linear layer
+                self.fc_feed_forward = nn.Linear(d_model, trg_vocab_size) # Linear layer
                 self.dropout = nn.Dropout(dropout)
 
         def forward(self, dec_input, enc_out, segment_pos, src_mask, trg_mask):
-                emb = embedding(dec_input, self.d_model, segment_pos).to(self.device)
+                emb = embedding(dec_input, self.d_model, segment_pos).to(self.device) #shape: sample, seq_len, d_model
                 out = self.dropout(emb)
                 for layer in self.layers:
-                        out = layer(out, enc_out, enc_out, src_mask, trg_mask) # out from dec_input
+                        out = layer(enc_out, enc_out, out, src_mask, trg_mask) # out from dec_input
                 out = self.fc_feed_forward(out)
                 return out
 
@@ -129,13 +129,14 @@ class decoder(nn.Module):
 class transformer(nn.Module):
         def __init__(self, src_pad_idx, trg_pad_idx, d_model=20,
                      num_layer=6, heads=4, ff_expansion=4, dropout=0.1,
-                     device="cpu", trg_seq_len=58):
+                     device="cpu", trg_vocab_size=20):
                 super(transformer, self).__init__()
                 self.encoder = encoder(d_model, num_layer, heads, device, ff_expansion, dropout)
-                self.decoder = decoder(d_model, num_layer, heads, device, ff_expansion, dropout, trg_seq_len)
+                self.decoder = decoder(d_model, num_layer, heads, device, ff_expansion, dropout, trg_vocab_size)
                 self.src_pad_idx = src_pad_idx
                 self.trg_pad_idx = trg_pad_idx
                 self.device = device
+                self.softmax = nn.Softmax(dim=-1)
 
         def make_src_mask(self, src_seq):
                 pass
@@ -152,6 +153,7 @@ class transformer(nn.Module):
                 trg_mask = self.make_trg_mask(trg_seq)
                 out_enc = self.encoder(src_seq, segment_pos, src_mask)
                 out = self.decoder(trg_seq, out_enc, segment_pos, src_mask, trg_mask)
+                out = self.softmax(out)
                 return out
 
 
