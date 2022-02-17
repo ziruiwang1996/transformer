@@ -1,41 +1,120 @@
 import numpy as np
-from embedding import onehot_emb, seg_emb, pos_emb
+from embedding import *
 import random
+from transformer import *
+
+# load data
+input_seqs = ['AEAKYAEENCNALSEIYYLPNLTSTQRCAFIKALCDDPSQSSELLSEAKKLNDSQAPK',
+              'AEAKYAEENCNACCSICSLPNLTISQRIAFIYALYDDPSQSSELLSEAKKLNDSQAPK',
+              'AEAKYAEENCNACCSICSLSNLTISQRIAFIYALYDDPSQSSELLSEAKKLNDSQAPK']
+# build a look up table
+one_hots = np.zeros((20, 20))
+np.fill_diagonal(one_hots, 1)
+tokens = ["A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y"]
+order = list(range(1,len(tokens)+1))
+look_up = dict(zip(tokens, order))
+look_up['-'] = 0
+#print(look_up)
+
+def get_key(val):
+    for key, value in look_up.items():
+        if val == value:
+            return key
+    return "key doesn't exist"
+
+def token_id(input_seqs):
+    indices_all_seqs = []
+    for seq in input_seqs:
+        indices_seq = []
+        for aa in list(seq):
+            indices_seq.append(look_up.get(aa))
+        indices_all_seqs.append(indices_seq)
+    return np.array(indices_all_seqs)
+
+def token_masking(input_seqs):
+    n, seq_lenth = len(input_seqs), len(input_seqs[0])
+    mask = []
+    for i in range(n):
+        mask.append(np.random.rand(seq_lenth) < 0.15)
+    mask = torch.from_numpy(np.array(mask))
+
+    masked_spots = []
+    indices_all_seqs = token_id(input_seqs)
+    for i in range(n):
+        masked_spots.append(torch.flatten(mask[i].nonzero()).tolist())
+    for i in range(n):
+        indices_all_seqs[i, masked_spots[i]] = 0
+
+    sequences = []
+    for indices in indices_all_seqs:
+        sequence = ''
+        for index in indices:
+            sequence = sequence + get_key(index)
+        sequences.append(sequence)
+    return masked_spots, indices_all_seqs, sequences
 
 
-def token_masking(matrix_after_onehot, d_model=21, seq_lenth=58, sample_size=5, perc=0.15):
-    mask = np.random.random((sample_size, seq_lenth))
-    matrix_after_onehot[mask<(perc*0.9), :]=0 #15% * (100%-10%) replace with [MASK]=[0,0...]
-    coord = np.where(mask<(perc*0.1)) #15% * 10% replace with random token
-    for index in list(zip(coord[0],coord[1])):
-        matrix_after_onehot[index[0], index[1], random.randrange(d_model)] = 1
-    return matrix_after_onehot
+class bert(nn.Module):
+    def __init__(self, d_model=20, num_layer=6, heads=4, device='cpu', ff_expansion=4, dropout=0.1):
+        super().__init__()
+        self.d_model = d_model
+        self.encoder = encoder(d_model, num_layer, heads, device, ff_expansion, dropout)
+        self.softmax = nn.Softmax(dim=-1)
+        self.loss = nn.CrossEntropyLoss()
 
-# loading data
-seqs = ['AEAKYAEENCNACCSICPLPNLTISQRIAFIYALYDDPSQSSELLSEAKKLNDSQAPK',
-        'AEAKYAEENCNACCSICSLPNLTISQRIAFIYALYDDPSQSSELLSEAKKLNDSQAPK',
-        'AEAKYAEENCNACCSICSLPNLTISQRIAFVYALYDDPSQSSELLSEAKKLNDSQAPK',
-        'AEAKYAEENCNACCSICSLSNLTISQRIAFIYALYDDPSQSSELLSEAKKLNDSQAPK',
-        'AEAKYAEENCNALSEIYYLPNLTSTQRCAFIKALCDDPSQSSELLSEAKKLNDSQAPK']
+    def actual_token(self, masked_spots, n):
+        actual = []
+        for i in range(n):
+            trg = token_id(input_seqs)
+            actual_tokens = trg[i, masked_spots[i]]
+            for token in actual_tokens:
+                actual.append(token)
+        return torch.Tensor(actual)
 
-one_hot = []
-seg_pos_emb = []
-for seq in seqs:
-    one_hot.append(onehot_emb(seq))
-    emb = seg_emb( [(0,20),(20,38),(38,58)], 58) + pos_emb(58)
-    seg_pos_emb.append(emb)
+    def forward(self, input_seqs, segment_pos, mask):
+        n = len(input_seqs)
+        masking = token_masking(input_seqs)
+        masked_seq = masking[2]
+        masked_spots = masking[0]
+        y = self.actual_token(masked_spots, n)
+        out = self.encoder(masked_seq, segment_pos, mask)
+        y_pred = out[0, masked_spots[0]]
+        for i in range(1, n):
+            y_pred= torch.cat((y_pred,out[i, masked_spots[i]]), 0)
+        loss = self.loss(y_pred, y.long())
+        return loss
 
-# token masking
-data = np.array(one_hot)
-masked_repr = token_masking(data)
-#print(data.shape)
+pre_train = bert()
+out = pre_train(input_seqs, {0:20, 20:38, 38:58}, None)
+out.backward()
 
-emb_lst = []
-for i in np.arange(58):
-    emb = masked_repr[i] + seg_pos_emb[i]
-    emb_lst.append(emb)
-#x_data = torch.tensor(np.array(seq_list))
-print(emb_lst)
 
-#encoder 12x
+'''def token_masking(input_seqs):
+    n, seq_lenth = len(input_seqs), len(input_seqs[0])
 
+    indices_all_seqs = []
+    for seq in input_seqs:
+        indices_seq = []
+        for aa in list(seq):
+            indices_seq.append(look_up.get(aa))
+        indices_all_seqs.append(indices_seq)
+    indices_all_seqs = np.array(indices_all_seqs)
+
+    mask = []
+    for i in range(n):
+        mask.append(np.random.random(seq_lenth) < 0.15)
+    mask = torch.from_numpy(np.array(mask))
+
+    masked_spots = []
+    for i in range(n):
+        masked_spots.append(torch.flatten(mask[i].nonzero()).tolist())
+    for i in range(n):
+        indices_all_seqs[i, masked_spots[i]] = 0
+
+    sequences = []
+    for indices in indices_all_seqs:
+        sequence = ''
+        for index in indices:
+            sequence = sequence + get_key(index)
+        sequences.append(sequence)
+    return sequences, masked_spots'''
