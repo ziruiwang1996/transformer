@@ -13,7 +13,10 @@ def embedding(seq_strs, d_model, segment_pos):
         one_hot_emb = np.zeros((seq_len, d_model))  # dimension: seq_len * d_model
         n = 0
         for aa in list(seq_str):
-            one_hot_emb[n][look_up.get(aa)] = 1
+            if aa == '-':
+                one_hot_emb[n, :] = 0 # masked token vector elements = 0
+            else:
+                one_hot_emb[n][look_up.get(aa)] = 1
             n += 1
 
         # segment embedding
@@ -33,8 +36,7 @@ def embedding(seq_strs, d_model, segment_pos):
         pos_emb[:, 1::2] = np.sin(pos_emb[:, 1::2])
         embs.append(one_hot_emb+seg_emb+pos_emb)
     embs = np.array(embs)
-    return torch.from_numpy(embs)
-
+    return torch.from_numpy(embs) #shape: n x q_len x d_model
 
 '''
 input = ['AEAKYAEENCNALSEIYYLPNLTSTQRCAFIKALCDDPSQSSELLSEAKKLNDSQAPK', 
