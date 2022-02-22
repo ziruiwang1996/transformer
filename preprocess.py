@@ -41,22 +41,23 @@ def token_masking(input_seqs):
         indices_all_seqs[i, masked_spots[i]] = 20
     return masked_spots, indices_all_seqs
 
-def masked_seq(input_seqs):
+def masked_seq(indices_all_seqs):
     sequences = []
-    for indices in token_masking(input_seqs)[1]:
+    for indices in indices_all_seqs:
         sequence = ''
         for index in indices:
             sequence = sequence + get_key(index)
         sequences.append(sequence)
     return sequences
 
-def labels(input_seqs):
+def get_label(input_seqs, masked_spots):
     n = len(input_seqs)  # sample size
-    actual = []
+    labels_all = []
     seq_tokens = tokenizer(input_seqs)
-    masked_spots = token_masking(input_seqs)[0]
     for i in range(n):
         labels = seq_tokens[i, masked_spots[i]]
+        labels_per_seq = []
         for label in labels:
-            actual.append(label)
-    return torch.Tensor(actual)
+            labels_per_seq.append(label)
+        labels_all.append(labels_per_seq)
+    return labels_all
