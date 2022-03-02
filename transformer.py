@@ -5,9 +5,9 @@ import torch
 import torch.nn as nn
 from embedding import embedding
 
-class multihead_attention(nn.Module):
+class Multihead_Attention(nn.Module):
         def __init__(self, d_model, heads):
-                super(multihead_attention, self).__init__()
+                super(Multihead_Attention, self).__init__()
                 self.d_model = d_model
                 self.heads = heads
                 self.d_k = d_model // heads
@@ -48,10 +48,10 @@ class multihead_attention(nn.Module):
 
 
 # multi-head attention + add&normalization + feed forward + add&normalization
-class encoder_block(nn.Module):
+class Encoder_Block(nn.Module):
         def __init__(self, d_model, heads, dropout, ff_expansion):
-                super(encoder_block, self).__init__()
-                self.attention = multihead_attention(d_model, heads)
+                super(Encoder_Block, self).__init__()
+                self.attention = Multihead_Attention(d_model, heads)
                 self.norm1 = nn.LayerNorm(d_model)
                 # two linear transformations with a ReLU activation in between
                 self.fc_feed_forward = nn.Sequential(nn.Linear(d_model, ff_expansion * d_model),
@@ -68,12 +68,12 @@ class encoder_block(nn.Module):
                 return out
 
 
-class encoder(nn.Module):
+class Encoder(nn.Module):
         def __init__(self, d_model, num_layer, heads, device, ff_expansion, dropout):
-                super(encoder, self).__init__()
+                super(Encoder, self).__init__()
                 self.d_model = d_model
                 self.device = device
-                self.layers = nn.ModuleList([encoder_block(d_model=d_model,
+                self.layers = nn.ModuleList([Encoder_Block(d_model=d_model,
                                                            heads=heads,
                                                            dropout=dropout,
                                                            ff_expansion=ff_expansion)
@@ -89,12 +89,12 @@ class encoder(nn.Module):
                 return out
 
 
-class decoder_block(nn.Module):
+class Decoder_Block(nn.Module):
         def __init__(self, d_model, heads, dropout, ff_expansion):
-                super(decoder_block, self).__init__()
-                self.attention = multihead_attention(d_model, heads)
+                super(Decoder_Block, self).__init__()
+                self.attention = Multihead_Attention(d_model, heads)
                 self.norm = nn.LayerNorm(d_model)
-                self.cross_attention_block = encoder_block(d_model, heads, dropout, ff_expansion) # same architecture as encoder block
+                self.cross_attention_block = Encoder_Block(d_model, heads, dropout, ff_expansion) # same architecture as encoder block
                 self.dropout = nn.Dropout(dropout)
 
         def forward(self, value, key, input, src_mask, trg_mask):
@@ -106,12 +106,12 @@ class decoder_block(nn.Module):
                 return out
 
 
-class decoder(nn.Module):
+class Decoder(nn.Module):
         def __init__(self, d_model, num_layer, heads, device, ff_expansion, dropout, trg_vocab_size):
-                super(decoder, self).__init__()
+                super(Decoder, self).__init__()
                 self.d_model = d_model
                 self.device = device
-                self.layers = nn.ModuleList([decoder_block(d_model, heads, dropout, ff_expansion)
+                self.layers = nn.ModuleList([Decoder_Block(d_model, heads, dropout, ff_expansion)
                                              for _ in range(num_layer)
                                              ]) # running block for num_layer times
                 self.fc_feed_forward = nn.Linear(d_model, trg_vocab_size) # Linear layer
@@ -126,13 +126,13 @@ class decoder(nn.Module):
                 return out
 
 
-class transformer(nn.Module):
+class Transformer(nn.Module):
         def __init__(self, src_pad_idx, trg_pad_idx, d_model=20,
                      num_layer=6, heads=4, ff_expansion=4, dropout=0.1,
                      device="cpu", trg_vocab_size=20):
-                super(transformer, self).__init__()
-                self.encoder = encoder(d_model, num_layer, heads, device, ff_expansion, dropout)
-                self.decoder = decoder(d_model, num_layer, heads, device, ff_expansion, dropout, trg_vocab_size)
+                super(Transformer, self).__init__()
+                self.encoder = Encoder(d_model, num_layer, heads, device, ff_expansion, dropout)
+                self.decoder = Decoder(d_model, num_layer, heads, device, ff_expansion, dropout, trg_vocab_size)
                 self.src_pad_idx = src_pad_idx
                 self.trg_pad_idx = trg_pad_idx
                 self.device = device
@@ -164,6 +164,6 @@ if __name__ == "__main__":
     trg = ['AEAKYAEENCNACCSICSLPNLTISQRIAFVYALYDDPSQSSELLSEAKKLNDSQAPK', 'AEAKYAEENCNACCSICSLSNLTISQRIAFIYALYDDPSQSSELLSEAKKLNDSQAPK']
     src_pad_idx = 0
     trg_pad_idx = 0
-    model = transformer(src_pad_idx, trg_pad_idx, device=device)
+    model = Transformer(src_pad_idx, trg_pad_idx, device=device)
     out = model(input, trg, {0:20, 20:38, 38:58})
     print(out.shape)
