@@ -1,14 +1,18 @@
 import torch
 import numpy as np
+import random
 
 # look up table
 one_hots = np.zeros((20, 20))
 np.fill_diagonal(one_hots, 1)
-tokens = ["A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y"]
+#tokens = ["A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y", "-"]
+tokens = ["A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y", "<mask>"] #for esm
 order = list(range(len(tokens)))
 look_up = dict(zip(tokens, order))
-look_up['-'] = 20
-#print(look_up)
+print(look_up)
+
+def rand_aa_index():
+    return random.randint(0, 19)
 
 def get_key(val):
     for key, value in look_up.items():
@@ -25,23 +29,33 @@ def tokenizer(input_seqs):
         indices_all_seqs.append(indices_seq)
     return np.array(indices_all_seqs)
 
-def token_masking(input_seqs):
+def text_corrupting(input_seqs):
     n = len(input_seqs)  # sample size
     seq_len = len(input_seqs[0])  # sequence length
-
     # generating random numbers from 0-1
+    # 0     - 0.12  --> <mask> 80%
+    # 0.12  - 0.135 --> random change 10%
+    # 0.135 - 0.15  --> unchange 10%
     torch.manual_seed(100)
-    mask = torch.rand((n, seq_len)) < 0.15
+    a = torch.rand((n, seq_len))
+    corrupted_spots = a < 0.15
+    msk = a < 0.12
+    rc = (a < 0.135 ) & (a >= 0.12)
+    # uc = (a < 0.15 ) & (a >= 0.135) no action needed for unchange
 
-    masked_spots = []
+    msk_spots = []
+    rc_spots = []
     indices_all_seqs = tokenizer(input_seqs)
     for i in range(n):
-        masked_spots.append(torch.flatten(mask[i].nonzero()).tolist())
+        msk_spots.append(torch.flatten(msk[i].nonzero()).tolist())
+        rc_spots.append(torch.flatten(rc[i].nonzero()).tolist())
     for i in range(n):
-        indices_all_seqs[i, masked_spots[i]] = 20
-    return masked_spots, indices_all_seqs
+        indices_all_seqs[i, msk_spots[i]] = 20  # replace with <mask>
+        for j in range(len(rc_spots[i])):
+            indices_all_seqs[i, rc_spots[i][j]] = rand_aa_index()  # replace with random aa one by one
+    return corrupted_spots, indices_all_seqs
 
-def masked_seq(indices_all_seqs):
+def corrupted_seq(indices_all_seqs):
     sequences = []
     for indices in indices_all_seqs:
         sequence = ''
@@ -50,7 +64,7 @@ def masked_seq(indices_all_seqs):
         sequences.append(sequence)
     return sequences
 
-def get_label(input_seqs, masked_spots):
+def get_masked_token_label(input_seqs, masked_spots):
     n = len(input_seqs)  # sample size
     labels_all = []
     seq_tokens = tokenizer(input_seqs)
@@ -61,3 +75,12 @@ def get_label(input_seqs, masked_spots):
             labels_per_seq.append(label)
         labels_all.append(labels_per_seq)
     return labels_all
+
+def get_seq_label(trgs):
+    indexes = []
+    for seq in trgs:
+        seq_index = []
+        for token in seq:
+            seq_index.append(look_up.get(token))
+        indexes.append(seq_index)
+    return torch.Tensor(indexes)
