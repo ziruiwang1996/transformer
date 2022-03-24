@@ -2,14 +2,15 @@ import torch
 import numpy as np
 import random
 
+
 # look up table
 one_hots = np.zeros((20, 20))
 np.fill_diagonal(one_hots, 1)
-#tokens = ["A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y", "-"]
-tokens = ["A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y", "<mask>"] #for esm
+# special token: -: mask, +: start, #: end
+tokens = ["A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y", "+", "#", "-"]
 order = list(range(len(tokens)))
 look_up = dict(zip(tokens, order))
-print(look_up)
+#print(look_up)
 
 def rand_aa_index():
     return random.randint(0, 19)
@@ -42,7 +43,6 @@ def text_corrupting(input_seqs):
     msk = a < 0.12
     rc = (a < 0.135 ) & (a >= 0.12)
     # uc = (a < 0.15 ) & (a >= 0.135) no action needed for unchange
-
     msk_spots = []
     rc_spots = []
     indices_all_seqs = tokenizer(input_seqs)
@@ -50,21 +50,28 @@ def text_corrupting(input_seqs):
         msk_spots.append(torch.flatten(msk[i].nonzero()).tolist())
         rc_spots.append(torch.flatten(rc[i].nonzero()).tolist())
     for i in range(n):
-        indices_all_seqs[i, msk_spots[i]] = 20  # replace with <mask>
+        indices_all_seqs[i, msk_spots[i]] = 22  # replace with <mask>
         for j in range(len(rc_spots[i])):
             indices_all_seqs[i, rc_spots[i][j]] = rand_aa_index()  # replace with random aa one by one
     return corrupted_spots, indices_all_seqs
 
+def adjustment(corrupted_spots):
+    n = len(corrupted_spots)
+    a = torch.zeros((1, n)).bool()
+    a_t = torch.transpose(a, 0, 1)
+    b = torch.cat((a_t, corrupted_spots), 1)
+    return b
+
 def corrupted_seq(indices_all_seqs):
     sequences = []
     for indices in indices_all_seqs:
-        sequence = ''
+        sequence = '+'
         for index in indices:
             sequence = sequence + get_key(index)
         sequences.append(sequence)
     return sequences
 
-def get_masked_token_label(input_seqs, masked_spots):
+def get_mask_label(input_seqs, masked_spots):
     n = len(input_seqs)  # sample size
     labels_all = []
     seq_tokens = tokenizer(input_seqs)
