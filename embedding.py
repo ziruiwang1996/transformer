@@ -11,7 +11,7 @@ class Embedding():
         tokens = ["A", "C", "D", "E", "F", "G", "H", "I", "K", "L", "M", "N", "P", "Q", "R", "S", "T", "V", "W", "Y", "+", "#"]
         order = np.arange(len(tokens))
         look_up = dict(zip(tokens, order))
-        one_hot_emb = np.zeros((59, 22))  # dimension: seq_len * d_model
+        one_hot_emb = np.zeros((self.seq_len, self.d_model))  # dimension: seq_len * d_model
         #one_hot_emb = np.zeros((self.seq_len, self.d_model))
         n = 0
         for aa in list(seq_str):
